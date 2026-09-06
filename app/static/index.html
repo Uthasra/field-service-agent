@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Field Service Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F2F3F0; --panel:#FFFFFF; --ink:#1C2126; --steel:#5A6570;
+    --rule:#D6D9D4; --amber:#C77800; --alarm:#A81E1E; --verify:#1F6B4A;
+    --sans:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--paper); color:var(--ink); font-family:var(--sans);
+    font-size:16px; line-height:1.5; display:flex; flex-direction:column;
+  }
+  header{
+    background:var(--panel); border-bottom:2px solid var(--ink);
+    padding:.75rem 1rem; display:flex; align-items:baseline; gap:.75rem;
+    flex-wrap:wrap; position:sticky; top:0; z-index:2;
+  }
+  header h1{font-size:1.0625rem; font-weight:600; margin:0; letter-spacing:-.01em}
+  header .site{font-family:var(--mono); font-size:.8125rem; color:var(--steel)}
+  header .dot{width:.5rem;height:.5rem;border-radius:50%;background:var(--verify);
+    display:inline-block;margin-right:.35rem;vertical-align:middle}
+  header .dot.down{background:var(--alarm)}
+
+  main{flex:1; overflow-y:auto; padding:1rem; max-width:44rem; width:100%;
+    margin:0 auto; -webkit-overflow-scrolling:touch}
+
+  .msg{margin-bottom:1.25rem; max-width:60ch}
+  .msg .who{font-family:var(--mono); font-size:.75rem; color:var(--steel);
+    margin-bottom:.25rem}
+  .msg.tech{margin-left:auto; text-align:right}
+  .msg.tech .body{background:var(--ink); color:var(--paper); display:inline-block;
+    padding:.5rem .75rem; border-radius:.25rem .25rem 0 .25rem; text-align:left}
+  .msg.agent .body{background:var(--panel); border:1px solid var(--rule);
+    border-left:3px solid var(--amber); padding:.625rem .875rem}
+  .msg.agent.stopped .body{border-left-color:var(--alarm)}
+  .body p{margin:0 0 .5rem} .body p:last-child{margin-bottom:0}
+  .body code{font-family:var(--mono); font-size:.875em; background:#EDEFEB;
+    padding:.05em .3em; border-radius:2px}
+
+  /* The tool ledger — the point of the whole project. */
+  .ledger{margin-top:.5rem; border-top:1px dashed var(--rule); padding-top:.4rem}
+  .ledger summary{font-family:var(--mono); font-size:.75rem; color:var(--steel);
+    cursor:pointer; list-style:none}
+  .ledger summary::-webkit-details-marker{display:none}
+  .ledger summary::before{content:"▸ "; }
+  .ledger[open] summary::before{content:"▾ "; }
+  .step{display:flex; gap:.5rem; padding:.3rem 0 .3rem .5rem; font-size:.8125rem;
+    border-left:3px solid var(--verify); margin-top:.35rem}
+  .step.refused{border-left-color:var(--alarm)}
+  .step .name{font-family:var(--mono); font-weight:500; white-space:nowrap}
+  .step .detail{color:var(--steel); overflow-wrap:anywhere}
+  .step.refused .detail{color:var(--alarm)}
+
+  .chips{display:flex; gap:.4rem; overflow-x:auto; padding:.5rem 1rem 0;
+    max-width:44rem; margin:0 auto; width:100%}
+  .chips button{flex:0 0 auto; background:transparent; border:1px solid var(--rule);
+    color:var(--steel); font-family:var(--sans); font-size:.8125rem;
+    padding:.4rem .625rem; border-radius:1rem; cursor:pointer}
+  .chips button:hover{border-color:var(--ink); color:var(--ink)}
+
+  form{display:flex; gap:.5rem; padding:.625rem 1rem calc(.625rem + env(safe-area-inset-bottom));
+    max-width:44rem; margin:0 auto; width:100%}
+  textarea{flex:1; font:inherit; padding:.625rem .75rem; border:1px solid var(--rule);
+    border-radius:.25rem; resize:none; min-height:2.875rem; max-height:8rem;
+    background:var(--panel); color:var(--ink)}
+  textarea:focus,button:focus-visible{outline:2px solid var(--amber); outline-offset:1px}
+  form button{background:var(--amber); color:#fff; border:0; border-radius:.25rem;
+    font:600 1rem/1 var(--sans); padding:0 1.125rem; min-height:2.875rem;
+    min-width:5rem; cursor:pointer}
+  form button:disabled{background:var(--steel); cursor:progress}
+
+  .working{font-family:var(--mono); font-size:.8125rem; color:var(--steel)}
+  .working::after{content:"·"; animation:tick 1.2s steps(4,end) infinite}
+  @keyframes tick{0%{content:"·"}33%{content:"··"}66%{content:"···"}}
+  @media (prefers-reduced-motion:reduce){.working::after{animation:none;content:"···"}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Field Service Agent</h1>
+  <span class="site"><span class="dot" id="dot"></span><span id="status">connecting</span></span>
+</header>
+
+<main id="log">
+  <div class="msg agent">
+    <div class="who">agent</div>
+    <div class="body"><p>Ask about a procedure, a part, or an asset. I read from the
+    service manuals and the maintenance records, and I show you every lookup I made.</p></div>
+  </div>
+</main>
+
+<div class="chips" id="chips"></div>
+
+<form id="form">
+  <textarea id="input" rows="1" placeholder="Pump 4412 is vibrating at 6.1 mm/s — what now?"
+            autocomplete="off"></textarea>
+  <button type="submit" id="send">Ask</button>
+</form>
+
+<script>
+const log = document.getElementById('log');
+const form = document.getElementById('form');
+const input = document.getElementById('input');
+const send = document.getElementById('send');
+let history = [];
+
+const PROMPTS = [
+  "PMP-4412 is vibrating at 6.1 mm/s — what does the manual say?",
+  "Do we have a seal in stock for PMP-4412?",
+  "What was done to PMP-4412 this year?",
+  "Chiller CHL-2201 shows E02. What is that?",
+  "Raise a high priority work order for PMP-4412 to check coupling alignment",
+];
+const chips = document.getElementById('chips');
+PROMPTS.forEach(p => {
+  const b = document.createElement('button');
+  b.textContent = p.length > 42 ? p.slice(0, 40) + '…' : p;
+  b.title = p;
+  b.onclick = () => { input.value = p; input.focus(); };
+  chips.appendChild(b);
+});
+
+fetch('/health').then(r => r.json()).then(() => {
+  document.getElementById('status').textContent = 'plant a · online';
+}).catch(() => {
+  document.getElementById('dot').classList.add('down');
+  document.getElementById('status').textContent = 'backend unreachable';
+});
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
+function addMessage(who, text, {trace = [], stopped = false} = {}) {
+  const wrap = el('div', `msg ${who}` + (stopped ? ' stopped' : ''));
+  wrap.appendChild(el('div', 'who', who === 'tech' ? 'you' : 'agent'));
+  const body = el('div', 'body');
+  text.split('\n').filter(Boolean).forEach(line => body.appendChild(el('p', null, line)));
+
+  if (trace.length) {
+    const d = el('details', 'ledger');
+    const refused = trace.filter(s => s.type === 'guard').length;
+    d.appendChild(el('summary', null,
+      `${trace.length} lookup${trace.length > 1 ? 's' : ''}` +
+      (refused ? `, ${refused} refused` : '')));
+    trace.forEach(step => {
+      const row = el('div', 'step' + (step.type === 'guard' ? ' refused' : ''));
+      row.appendChild(el('span', 'name', step.tool || step.stage));
+      const detail = step.type === 'guard'
+        ? 'refused: ' + step.reasons.join(', ')
+        : summarise(step);
+      row.appendChild(el('span', 'detail', detail));
+      d.appendChild(row);
+    });
+    body.appendChild(d);
+  }
+  wrap.appendChild(body);
+  log.appendChild(wrap);
+  log.scrollTop = log.scrollHeight;
+  return wrap;
+}
+
+function summarise(step) {
+  const r = step.result || {};
+  if (r.results) return `${r.results.length} passages · ${r.query}`;
+  if (r.parts) return r.parts.map(p => `${p.part_number} ${p.status}`).join(', ');
+  if (r.history) return `${r.history.length} events for ${r.asset?.asset_id ?? ''}`;
+  if (r.wo_id) return `${r.wo_id} opened, ${r.priority}`;
+  if (r.error) return r.error;
+  return JSON.stringify(step.args || {});
+}
+
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if (!text) return;
+  addMessage('tech', text);
+  input.value = '';
+  send.disabled = true;
+
+  const pending = el('div', 'msg agent');
+  pending.appendChild(el('div', 'working', 'checking manuals and records'));
+  log.appendChild(pending);
+  log.scrollTop = log.scrollHeight;
+
+  try {
+    const res = await fetch('/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({message: text, history})
+    });
+    pending.remove();
+    if (!res.ok) throw new Error(`server returned ${res.status}`);
+    const data = await res.json();
+    addMessage('agent', data.reply, {trace: data.trace, stopped: data.blocked.length > 0});
+    history.push({role: 'user', content: text},
+                 {role: 'assistant', content: data.reply});
+    history = history.slice(-8);
+  } catch (err) {
+    pending.remove();
+    addMessage('agent', `The request did not go through: ${err.message}. Check the server is running and LLM_API_KEY is set, then ask again.`, {stopped: true});
+  } finally {
+    send.disabled = false;
+    input.focus();
+  }
+});
+
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
+});
+</script>
+</body>
+</html>
