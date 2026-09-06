@@ -9,6 +9,7 @@ import math
 import re
 from collections import Counter
 from functools import lru_cache
+from app.config import FORCE_LEXICAL
 
 import numpy as np
 
